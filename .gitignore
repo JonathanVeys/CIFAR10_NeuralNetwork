@@ -1,2 +1,5 @@
 # Ignore the dataset folder
 Dataset/
+
+# Ignore macOS finder files
+.DS_Store
