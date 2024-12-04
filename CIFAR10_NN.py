@@ -5,11 +5,8 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
-import torchvision.models as models
 import PIL
 
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
@@ -49,37 +46,35 @@ class SimpleClassifier(nn.Module):
     def __init__(self):
         super(SimpleClassifier, self).__init__()
         
-        # Convolutional layers
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)  # Input: 3x32x32 -> Output: 32x32x32
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)  # Input: 32x32x32 -> Output: 64x32x32
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)  # Input: 64x32x32 -> Output: 128x32x32
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)  
+        self.relu1 = nn.ReLU()
+
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)  
+        self.relu2 = nn.ReLU()
+
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)  
+        self.relu3 = nn.ReLU()
         
-        # Max pooling layer (applies after each convolution)
-        self.pool = nn.MaxPool2d(2, 2)  # Halves the spatial dimensions (e.g., from 32x32 to 16x16)
+        self.pool = nn.MaxPool2d(2, 2)  
 
-        # Fully connected layers
-        self.fc1 = nn.Linear(128 * 4 * 4, 256)  # Flattened dimensions after 3 pooling layers
+        self.fc1 = nn.Linear(128 * 4 * 4, 256)  
         self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, 10)  # Output 10 classes for CIFAR-10
+        self.fc3 = nn.Linear(128, 10)  
 
-        # Dropout layer to prevent overfitting
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
-        # Apply convolutions, ReLU activations, and pooling
-        x = self.pool(F.relu(self.conv1(x)))  # Conv1 -> ReLU -> Pool
-        x = self.pool(F.relu(self.conv2(x)))  # Conv2 -> ReLU -> Pool
-        x = self.pool(F.relu(self.conv3(x)))  # Conv3 -> ReLU -> Pool
 
-        # Flatten the tensor for fully connected layers
-        x = x.view(-1, 128 * 4 * 4)  # Flattening the tensor (adjusted to match the correct size)
+        x = self.pool(self.relu1(self.conv1(x)))  
+        x = self.pool(self.relu2(self.conv2(x)))  
+        x = self.pool(self.relu3(self.conv3(x)))  
 
-        # Apply fully connected layers with ReLU activations
+        x = x.view(-1, 128 * 4 * 4) 
+
         x = F.relu(self.fc1(x))
-        x = self.dropout(x)  # Apply dropout to the activations
+        x = self.dropout(x)  
         x = F.relu(self.fc2(x))
-        x = self.fc3(x)  # Output layer (no activation function here as it's for classification)
-
+        x = self.fc3(x)
         return x
 
 
@@ -88,23 +83,23 @@ model = SimpleClassifier()
 model.to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-epochs = 10
+epochs = 25
 loss_track = []
-
+valid_track= []
 
 for epoch in range(epochs):
     model.train()  # Set the model to training mode
     running_loss = 0.0
 
-    for inputs, labels in tqdm(train_loader, desc = 'Training'):
+    for images, labels in tqdm(train_loader, desc = 'Training'):
         # Move data to device (GPU or CPU)
-        inputs, labels = inputs.to(device), labels.to(device)
+        images, labels = images.to(device), labels.to(device)
 
         # Zero the parameter gradients
         optimizer.zero_grad()
 
         # Forward pass
-        outputs = model(inputs)
+        outputs = model(images)
 
         # Compute loss
         loss = criterion(outputs, labels)
@@ -119,10 +114,26 @@ for epoch in range(epochs):
         running_loss += loss.item()
     loss_track.append(running_loss/len(train_loader))
 
+    model.eval()
+    eval_loss = 0.0
+    for images, labels in tqdm(valid_loader, desc = 'Validation'):
+        images, labels = images.to(device), labels.to(device)
 
+        optimizer.zero_grad()
+
+        outputs = model(images)
+
+        loss = criterion(outputs, labels)
+
+        eval_loss += loss.item()
+    valid_track.append(eval_loss/len(valid_loader))
     # Print average loss for the epoch
-    print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(train_loader):.4f}")
+    print(f"Epoch {epoch+1}/{epochs} | Train Loss: {running_loss/len(train_loader):.4f} | Valid Loss: {eval_loss/len(valid_loader)}")
 
-print(loss_track)
 plt.plot([n for n in range(epochs)], loss_track)
+plt.plot([n for n in range(epochs)], valid_track)
+plt.xlabel("Epcochs")
+plt.ylabel("Cross Entropy Loss")
+plt.grid()
+plt.legend()
 plt.show()
