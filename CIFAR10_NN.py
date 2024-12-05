@@ -4,12 +4,14 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
+import torch.nn.functional as F
 import PIL
 from PIL import Image
 
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import random
 
 class CIFARDataset(Dataset):
     def __init__(self, data_dir, transform):
@@ -27,25 +29,6 @@ transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ])
-
-
-train_dir = '/Users/jonathancrocker/Documents/VSCode/Code/Pytorch/CIFAR10_NeuralNetworkd/Dataset/Train'
-test_dir = '/Users/jonathancrocker/Documents/VSCode/Code/Pytorch/CIFAR10_NeuralNetworkd/Dataset/Test'
-
-train_dataset = CIFARDataset(train_dir, transform)
-valid_size = len(train_dataset) // 5
-train_size = len(train_dataset) - valid_size
-
-test_dataset = CIFARDataset(test_dir,transform)
-valid_dataset, train_dataset = random_split(train_dataset, [valid_size,train_size])
-
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-valid_loader = DataLoader(valid_dataset, batch_size=32, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 class SimpleClassifier(nn.Module):
     def __init__(self):
@@ -78,12 +61,27 @@ class SimpleClassifier(nn.Module):
         x = self.fc3(x)
         return x
 
+
+train_dir = '/Users/jonathancrocker/Documents/VSCode/Code/Pytorch/CIFAR10_NeuralNetworkd/Dataset/Train'
+test_dir = '/Users/jonathancrocker/Documents/VSCode/Code/Pytorch/CIFAR10_NeuralNetworkd/Dataset/Test'
+
+train_dataset = CIFARDataset(train_dir, transform)
+valid_size = len(train_dataset) // 5
+train_size = len(train_dataset) - valid_size
+
+test_dataset = CIFARDataset(test_dir,transform)
+valid_dataset, train_dataset = random_split(train_dataset, [valid_size,train_size])
+
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+valid_loader = DataLoader(valid_dataset, batch_size=32, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 model = SimpleClassifier()
 model.to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
-epochs = 2
+epochs = 1
 loss_track = []
 valid_track= []
 
@@ -130,7 +128,6 @@ for epoch in range(epochs):
         valid_track.append(eval_loss/len(valid_loader))
         print(f"Epoch {epoch+1}/{epochs} | Train Loss: {running_loss/len(train_loader):.4f} | Valid Loss: {eval_loss/len(valid_loader)}")
 
-print(valid_track[-1])
 plt.plot([n for n in range(epochs)], loss_track, label="Training Loss")
 plt.plot([n for n in range(epochs)], valid_track, label="Validation Loss")
 plt.xlabel("Epcochs")
@@ -139,3 +136,51 @@ plt.grid()
 plt.legend()
 plt.show()
 
+# Set the model to evaluation mode
+model.eval()
+
+# Sample random indices from the test dataset
+random_indices = random.sample(range(len(test_dataset)), 9)
+
+# Extract the random images and labels
+random_images = []
+random_labels = []
+
+
+for idx in random_indices:
+    image, label = test_dataset[idx]  # Access the image and label from the dataset
+    random_images.append(image)
+    random_labels.append(label)
+
+# Move images to the correct device for the model
+random_images = torch.stack(random_images).to(device)
+
+# Get model predictions
+with torch.no_grad():
+    outputs = model(random_images)
+    probabilities = F.softmax(outputs, dim=1)
+    _, predicted_classes = torch.max(probabilities, 1)
+
+# Plot the randomly selected images with predictions
+fig, axes = plt.subplots(3, 3, figsize=(12, 12))
+
+for i in range(9):
+    ax = axes[i // 3, i % 3]
+    image = random_images[i].cpu().numpy().transpose((1, 2, 0))  # Convert from CxHxW to HxWxC
+    image = np.clip(image, 0, 1)
+
+    ax.imshow(image)
+    ax.axis('off')
+
+    # Get the predicted class and its probability
+    predicted_class = predicted_classes[i].item()
+    probability = probabilities[i, predicted_class].item()
+
+    # True label for the image
+    true_label = random_labels[i]
+
+    # Show predicted class, true label, and probability
+    ax.set_title(f'Pred: {predicted_class} ({probability*100:.2f}%)\nTrue: {true_label}')
+
+plt.tight_layout()
+plt.show()
