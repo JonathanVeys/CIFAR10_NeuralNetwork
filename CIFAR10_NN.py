@@ -34,32 +34,44 @@ class SimpleClassifier(nn.Module):
     def __init__(self):
         super(SimpleClassifier, self).__init__()
         
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)  
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(16)
         self.relu1 = nn.ReLU()
 
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)  
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(32)
         self.relu2 = nn.ReLU()
 
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)  
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(64)
         self.relu3 = nn.ReLU()
-        
-        self.pool = nn.MaxPool2d(2, 2)  
 
-        self.fc1 = nn.Linear(64 * 4 * 4, 64)  # Corrected input size
-        self.fc3 = nn.Linear(64, 10)  
+        self.conv4 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.bn4 = nn.BatchNorm2d(128)
+        self.relu4 = nn.ReLU()
 
-        self.dropout = nn.Dropout(0.3)
+        self.pool = nn.MaxPool2d(2, 2)
+
+        self.fc1 = nn.Linear(2 * 2 * 128, 256)  # Increased fully connected size
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 10)
+
+        self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
-        x = self.pool(self.relu1(self.conv1(x)))
-        x = self.pool(self.relu2(self.conv2(x)))
-        x = self.pool(self.relu3(self.conv3(x)))
+        x = self.pool(self.relu1(self.bn1(self.conv1(x))))
+        x = self.pool(self.relu2(self.bn2(self.conv2(x))))
+        x = self.pool(self.relu3(self.bn3(self.conv3(x))))
+        x = self.pool(self.relu4(self.bn4(self.conv4(x))))
 
         x = x.view(x.size(0), -1)  # Flatten the tensor
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
+        x = F.relu(self.fc2(x))
+        x = self.dropout(x)
         x = self.fc3(x)
         return x
+
 
 
 train_dir = '/Users/jonathancrocker/Documents/VSCode/Code/Pytorch/CIFAR10_NeuralNetworkd/Dataset/Train'
@@ -72,7 +84,7 @@ train_size = len(train_dataset) - valid_size
 test_dataset = CIFARDataset(test_dir,transform)
 valid_dataset, train_dataset = random_split(train_dataset, [valid_size,train_size])
 
-train_loader = DataLoader(train_dataset, batch_size=1028, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 valid_loader = DataLoader(valid_dataset, batch_size=32, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
@@ -81,11 +93,16 @@ model = SimpleClassifier()
 model.to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
-epochs = 50
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+max_epochs = 50
+patience = 5
+epoch = 0
+min_delta = 1e-1
+best_loss = float('inf')
 loss_track = []
 valid_track= []
 
-for epoch in range(epochs):
+while epoch < max_epochs:
     model.train()  # Set the model to training mode
     running_loss = 0.0
 
@@ -110,10 +127,13 @@ for epoch in range(epochs):
 
         # Accumulate loss for logging
         running_loss += loss.item()
+
+        # Update the scheduler
+    scheduler.step()
     loss_track.append(running_loss/len(train_loader))
 
     model.eval()
-    eval_loss = 0.0
+    valid_loss = 0.0
     with torch.no_grad():
         for images, labels in tqdm(valid_loader, desc = 'Validation'):
             images, labels = images.to(device), labels.to(device)
@@ -124,12 +144,27 @@ for epoch in range(epochs):
 
             loss = criterion(outputs, labels)
 
-            eval_loss += loss.item()
-        valid_track.append(eval_loss/len(valid_loader))
-        print(f"Epoch {epoch+1}/{epochs} | Train Loss: {running_loss/len(train_loader):.4f} | Valid Loss: {eval_loss/len(valid_loader)}")
+            valid_loss += loss.item()
+        valid_track.append(valid_loss/len(valid_loader))
+        print(f"Epoch {epoch+1} | Train Loss: {running_loss/len(train_loader):.4f} | Valid Loss: {valid_loss/len(valid_loader)}")
 
-plt.plot([n for n in range(epochs)], loss_track, label="Training Loss")
-plt.plot([n for n in range(epochs)], valid_track, label="Validation Loss")
+    # Check for improvement in validation loss
+    if valid_loss < best_loss - min_delta:
+        # Significant improvement
+        best_loss = valid_loss
+        patience_counter = 0  # Reset patience
+    else:
+        # No significant improvement
+        patience_counter += 1
+        if patience_counter >= patience:
+            print(f"Early stopping triggered at epoch {epoch+1}.")
+            break
+    print(f'Patience: {patience_counter}')
+    epoch += 1
+
+
+plt.plot([n for n in range(len(loss_track))], loss_track, label="Training Loss")
+plt.plot([n for n in range(len(valid_track))], valid_track, label="Validation Loss")
 plt.xlabel("Epcochs")
 plt.ylabel("Cross Entropy Loss")
 plt.grid()
