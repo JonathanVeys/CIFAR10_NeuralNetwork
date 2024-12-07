@@ -72,7 +72,7 @@ train_size = len(train_dataset) - valid_size
 test_dataset = CIFARDataset(test_dir,transform)
 valid_dataset, train_dataset = random_split(train_dataset, [valid_size,train_size])
 
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=1028, shuffle=True)
 valid_loader = DataLoader(valid_dataset, batch_size=32, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
@@ -81,7 +81,7 @@ model = SimpleClassifier()
 model.to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
-epochs = 1
+epochs = 50
 loss_track = []
 valid_track= []
 
